@@ -9,16 +9,23 @@
 
 import os, glob
 from PIL import Image
-import modules.scripts as scripts
+try:
+    import modules.scripts as a1111_scripts
+    from modules import scripts_postprocessing
+    from modules.processing import (
+        StableDiffusionProcessing,
+        StableDiffusionProcessingImg2Img,
+    )
+    BaseScript = a1111_scripts.Script
+except Exception:
+    a1111_scripts = None
+    scripts_postprocessing = None
+    StableDiffusionProcessing = None
+    StableDiffusionProcessingImg2Img = None
+    BaseScript = object
 
-# from modules.upscaler import Upscaler, UpscalerData
-from modules import scripts, scripts_postprocessing
-from modules.processing import (
-    StableDiffusionProcessing,
-    StableDiffusionProcessingImg2Img,
-)
-from scripts.instaswap_logger import logger
-from scripts.instaswap_swapper import swap_face, get_current_faces_model,analyze_faces
+from .instaswap_logger import logger
+from .instaswap_swapper import swap_face, get_current_faces_model, analyze_faces
 
 import folder_paths
 
@@ -28,7 +35,7 @@ def get_models():
     models = [x for x in models if x.endswith(".onnx") or x.endswith(".pth")]
     return models
 
-class FaceSwapScript(scripts.Script):
+class FaceSwapScript(BaseScript):
 
     def process(
         self,
@@ -44,6 +51,9 @@ class FaceSwapScript(scripts.Script):
         gender_target,
         face_model,
     ):
+        if a1111_scripts is None or StableDiffusionProcessingImg2Img is None:
+            raise RuntimeError("InstaSwap requires the A1111 'modules' package. Install A1111 dependencies or use a ComfyUI-native swapper.")
+
         self.enable = enable
         if self.enable:
 
@@ -102,8 +112,10 @@ class FaceSwapScript(scripts.Script):
         if self.enable:
             images = kwargs["images"]
 
-    def postprocess_image(self, p, script_pp: scripts.PostprocessImageArgs, *args):
+    def postprocess_image(self, p, script_pp, *args):
         if self.enable and self.swap_in_generated:
+            if scripts_postprocessing is None:
+                raise RuntimeError("InstaSwap requires the A1111 'modules' package for postprocessing.")
             if self.source is not None:
                 logger.job(f"Thread Started : Transferring face from source index %s onto the target face index %s.s", self.source_faces_index, self.faces_index)
                 image: Image.Image = script_pp.image
