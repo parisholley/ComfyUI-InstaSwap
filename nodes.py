@@ -5,7 +5,10 @@ from torchvision.transforms.functional import normalize
 import numpy as np
 import cv2
 
-from modules.processing import StableDiffusionProcessingImg2Img
+try:
+    from modules.processing import StableDiffusionProcessingImg2Img
+except Exception:
+    StableDiffusionProcessingImg2Img = None
 from comfy_extras.chainner_models import model_loading
 import model_management
 import comfy.utils
@@ -100,6 +103,9 @@ class instaswap:
         if face_model == "none":
             face_model = None
         
+        if StableDiffusionProcessingImg2Img is None:
+            raise RuntimeError("InstaSwap requires the A1111 'modules' package (StableDiffusionProcessingImg2Img). Install A1111 dependencies or use a ComfyUI-native swapper.")
+
         script = FaceSwapScript()
         pil_images = batch_tensor_to_pil(input_image)
         if source_image is not None:
