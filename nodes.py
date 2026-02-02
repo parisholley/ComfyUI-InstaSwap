@@ -4,17 +4,12 @@ import torch
 from torchvision.transforms.functional import normalize
 import numpy as np
 import cv2
-
-try:
-    from modules.processing import StableDiffusionProcessingImg2Img
-except Exception:
-    StableDiffusionProcessingImg2Img = None
 from comfy_extras.chainner_models import model_loading
 import model_management
 import comfy.utils
 import folder_paths
 
-from .scripts.instaswap_faceswap import FaceSwapScript, get_models, get_current_faces_model, analyze_faces
+from .scripts.instaswap_swapper import swap_face, get_current_faces_model, analyze_faces
 from .scripts.instaswap_logger import logger
 from .instaswap_utils import batch_tensor_to_pil, batched_pil_to_tensor, tensor_to_pil, img2tensor, tensor2img, save_face_model, load_face_model
 from .instaswap_log_patch import apply_logging_patch
@@ -34,6 +29,13 @@ if not os.path.exists(INSTASWAP_MODELS_PATH):
 dir_facerestore_models = os.path.join(models_dir, "facerestore_models")
 os.makedirs(dir_facerestore_models, exist_ok=True)
 folder_paths.folder_names_and_paths["facerestore_models"] = ([dir_facerestore_models], folder_paths.supported_pt_extensions)
+
+
+def get_models():
+    models_path = os.path.join(folder_paths.models_dir, "insightface", "*")
+    models = glob.glob(models_path)
+    models = [x for x in models if x.endswith(".onnx") or x.endswith(".pth")]
+    return models
 
 
 def get_facemodels():
@@ -103,30 +105,49 @@ class instaswap:
         if face_model == "none":
             face_model = None
         
-        if StableDiffusionProcessingImg2Img is None:
-            raise RuntimeError("InstaSwap requires the A1111 'modules' package (StableDiffusionProcessingImg2Img). Install A1111 dependencies or use a ComfyUI-native swapper.")
-
-        script = FaceSwapScript()
         pil_images = batch_tensor_to_pil(input_image)
         if source_image is not None:
             source = tensor_to_pil(source_image)
         else:
             source = None
-        p = StableDiffusionProcessingImg2Img(pil_images)
-        script.process(
-            p=p,
-            img=source,
-            enable=True,
-            source_faces_index=source_faces_index,
-            faces_index=input_faces_index,
-            model=swap_model,
-            swap_in_source=True,
-            swap_in_generated=True,
-            gender_source=detect_gender_source,
-            gender_target=detect_gender_input,
-            face_model=face_model,
-        )
-        result = batched_pil_to_tensor(p.init_images)
+
+        source_faces_index_list = [int(x) for x in source_faces_index.strip(",").split(",") if x.isnumeric()]
+        input_faces_index_list = [int(x) for x in input_faces_index.strip(",").split(",") if x.isnumeric()]
+
+        if len(source_faces_index_list) == 0:
+            source_faces_index_list = [0]
+        if len(input_faces_index_list) == 0:
+            input_faces_index_list = [0]
+
+        if detect_gender_source is None or detect_gender_source == "no":
+            gender_source = 0
+        elif detect_gender_source == "female":
+            gender_source = 1
+        else:
+            gender_source = 2
+
+        if detect_gender_input is None or detect_gender_input == "no":
+            gender_target = 0
+        elif detect_gender_input == "female":
+            gender_target = 1
+        else:
+            gender_target = 2
+
+        swapped_images = []
+        for image in pil_images:
+            result_image = swap_face(
+                source_img=source,
+                target_img=image,
+                model=swap_model,
+                source_faces_index=source_faces_index_list,
+                faces_index=input_faces_index_list,
+                gender_source=gender_source,
+                gender_target=gender_target,
+                face_model=face_model,
+            )
+            swapped_images.append(result_image)
+
+        result = batched_pil_to_tensor(swapped_images)
 
         if face_model is None:
             current_face_model = get_current_faces_model()
